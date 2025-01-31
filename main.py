@@ -1,5 +1,3 @@
-#backend/main.py
-
 import os
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -23,7 +21,8 @@ def process_playlist(user_id: str):
     1. Load user's document from 'users' collection.
     2. Extract playlistUrl, parse the playlist ID.
     3. Fetch the playlist's videos from YouTube.
-    4. For each NEW video, fetch transcript, summarize it, store in 'videos', and email the user.
+    4. For each NEW video, fetch transcript; if transcript is missing, skip it.
+       If transcript is found, summarize it, store in 'videos', and email the user.
     """
     user_doc_ref = db.collection("users").document(user_id)
     user_doc = user_doc_ref.get()
@@ -50,8 +49,13 @@ def process_playlist(user_id: str):
         if not doc_ref.get().exists:
             # It's a brand-new video
             transcript = fetch_transcript(video_id)
-            text_to_summarize = transcript if transcript else vid["description"]
-            summary = summarize_text(text_to_summarize)
+            if not transcript:
+                # Log or print a message if needed, then skip this video.
+                print(f"No transcript available for video {video_id}. Skipping.")
+                continue
+
+            # Proceed only if transcript is available
+            summary = summarize_text(transcript)
 
             # Store in Firestore
             doc_ref.set({
@@ -79,7 +83,7 @@ def process_playlist(user_id: str):
 def process_all_users():
     """
     Process all users in the 'users' collection who have a 'playlistUrl'.
-    This is ideal to run from a cron job so new videos get summarized & emailed automatically.
+    Ideal for a cron job so new videos get summarized & emailed automatically.
     """
     users_ref = db.collection("users")
     users = users_ref.stream()
@@ -106,8 +110,11 @@ def process_all_users():
 
                 if not doc_ref.get().exists:
                     transcript = fetch_transcript(video_id)
-                    text_to_summarize = transcript if transcript else vid["description"]
-                    summary = summarize_text(text_to_summarize)
+                    if not transcript:
+                        print(f"No transcript available for video {video_id}. Skipping.")
+                        continue
+
+                    summary = summarize_text(transcript)
 
                     doc_ref.set({
                         "playlist_id": playlist_id,
