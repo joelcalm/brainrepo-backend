@@ -1,36 +1,33 @@
-# backend/email_utils.py
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from email.mime.text import MIMEText
+import base64
 import os
-import requests
-from dotenv import load_dotenv
-
-load_dotenv()
-
-MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
-MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
 
 def send_summary_email(to_email, subject, summary):
-    url = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
-    auth = ("api", MAILGUN_API_KEY)
+    client_id = os.getenv("GMAIL_CLIENT_ID")
+    client_secret = os.getenv("GMAIL_CLIENT_SECRET")
+    refresh_token = os.getenv("GMAIL_REFRESH_TOKEN")
+    token_uri = "https://oauth2.googleapis.com/token"
 
-    html_content = f"""
-    <html>
-      <body>
-        <h1>{subject}</h1>
-        <p>{summary}</p>
-      </body>
-    </html>
-    """
+    creds = Credentials(
+        None,
+        refresh_token=refresh_token,
+        token_uri=token_uri,
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=["https://www.googleapis.com/auth/gmail.send"],
+    )
 
-    data = {
-        "from": f"YouTube Summary <mailgun@{MAILGUN_DOMAIN}>",
-        "to": [to_email],
-        "subject": subject,
-        "html": html_content
-    }
+    service = build("gmail", "v1", credentials=creds)
 
-    try:
-        response = requests.post(url, auth=auth, data=data)
-        response.raise_for_status()
-        print(f"Email sent to {to_email}")
-    except Exception as e:
-        print(f"Mailgun error: {e}")
+    message = MIMEText(summary, "html")
+    message["to"] = to_email
+    message["subject"] = subject
+
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    body = {"raw": raw_message}
+
+    sent_message = service.users().messages().send(userId="me", body=body).execute()
+    print("Email sent. Message ID:", sent_message["id"])
