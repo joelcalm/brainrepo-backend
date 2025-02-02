@@ -1,28 +1,66 @@
 import os
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
+from pydantic import BaseModel
 
 # Local imports (assuming these files are in the same directory)
 from firebase_config import db
 from youtube_utils import extract_playlist_id, get_videos_from_playlist, fetch_transcript
 from deepseek_utils import summarize_text
 from email_utils import send_summary_email
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Or ["*"] if you're just testing
+    allow_credentials=True,
+    allow_methods=["*"],  # Or ["GET", "POST", "OPTIONS"] specifically
+    allow_headers=["*"],  # Or list specific headers
+)
+
+class PlaylistData(BaseModel):
+    email: str
+    playlistUrl: str
 
 @app.get("/")
 def root():
     return {"message": "Hello from FastAPI backend!"}
 
-@app.get("/process-playlist/{user_id}")
-def process_playlist(user_id: str):
+@app.post("/set-playlist")
+def set_playlist(data: PlaylistData = Body(...)):
     """
-    Process a single user's playlist:
-    1. Load user's document from 'users' collection.
-    2. Extract playlistUrl, parse the playlist ID.
-    3. Fetch the playlist's videos from YouTube.
-    4. For each NEW video, fetch transcript; if transcript is missing, skip it.
-       If transcript is found, summarize it, store in 'videos', and email the user.
+    1. Receive user email + playlist URL in the POST body.
+    2. Store/update the playlistUrl in Firestore for this user.
+    3. Call process_playlist (the logic is the same as the route below).
+    4. Return a response with the summary of how many new videos were processed.
+    """
+
+    # 1. Check if user exists, otherwise create one. Alternatively, you can require the user to exist already.
+    #    This example "upserts" the user doc (create if not found; update if found).
+    users_query = db.collection("users").where("email", "==", data.email).limit(1).get()
+    if len(users_query) == 0:
+        # Create a new user doc
+        new_doc_ref = db.collection("users").document()
+        new_doc_ref.set({
+            "email": data.email,
+            "playlistUrl": data.playlistUrl
+        })
+        user_id = new_doc_ref.id
+    else:
+        # Update existing user doc
+        user_doc = users_query[0]
+        user_id = user_doc.id
+        user_doc.reference.update({"playlistUrl": data.playlistUrl})
+
+    # 2. Call the same logic to process the playlist
+    result = process_playlist_internal(user_id)
+    return {"message": f"Playlist set and processed for {data.email}", **result}
+
+def process_playlist_internal(user_id: str):
+    """
+    Internal function (not a route) to process the user's playlist.
     """
     user_doc_ref = db.collection("users").document(user_id)
     user_doc = user_doc_ref.get()
@@ -34,7 +72,7 @@ def process_playlist(user_id: str):
     if not playlist_url:
         raise HTTPException(status_code=400, detail="User has no playlistUrl")
 
-    user_email = user_data.get("email")  # stored at sign-in time
+    user_email = user_data.get("email")
     playlist_id = extract_playlist_id(playlist_url)
     if not playlist_id:
         raise HTTPException(status_code=400, detail="Invalid playlist URL")
@@ -47,14 +85,12 @@ def process_playlist(user_id: str):
         doc_ref = db.collection("videos").document(video_id)
 
         if not doc_ref.get().exists:
-            # It's a brand-new video
+            # Brand-new video
             transcript = fetch_transcript(video_id)
             if not transcript:
-                # Log or print a message if needed, then skip this video.
                 print(f"No transcript available for video {video_id}. Skipping.")
                 continue
 
-            # Proceed only if transcript is available
             summary = summarize_text(transcript)
 
             # Store in Firestore
@@ -78,6 +114,13 @@ def process_playlist(user_id: str):
         "message": f"Processed playlist for user {user_id}",
         "newVideosFound": new_videos_count
     }
+
+@app.get("/process-playlist/{user_id}")
+def process_playlist(user_id: str):
+    """
+    If you still want a direct GET endpoint for testing or debugging, you can keep this.
+    """
+    return process_playlist_internal(user_id)
 
 @app.get("/process-all-users")
 def process_all_users():

@@ -47,7 +47,7 @@ def get_videos_from_playlist(playlist_id: str):
 def fetch_transcript(video_id: str):
     """Attempt to fetch the English transcript."""
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'es']) #first tries to get english transcript, if not available, gets spanish
         return " ".join([entry['text'] for entry in transcript_list])
     except Exception:
         return None
