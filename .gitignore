@@ -6,6 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
+credentials_gmail.json
+
 # Distribution / packaging
 .Python
 build/
@@ -135,6 +137,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Ignore Firebase credentials JSON file
+config/firebase_credentials.json
+
 
 # Spyder project settings
 .spyderproject
