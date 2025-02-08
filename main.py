@@ -4,12 +4,14 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+import stripe
 
 # Local imports
 from firebase_config import db
 from youtube_utils import extract_playlist_id, get_videos_from_playlist, fetch_transcript
 from deepseek_utils import summarize_text
 from email_utils import send_summary_email
+from stripe_webhook import stripe_webhook_router
 
 app = FastAPI()
 
@@ -21,10 +23,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(stripe_webhook_router)
+
 class PlaylistData(BaseModel):
     email: str
     playlistUrl: str
     name: str
+    credits: int = 5  # Default credits for new users
 
 @app.get("/")
 def root():
@@ -50,7 +55,8 @@ def save_playlist(data: PlaylistData = Body(...)):
         new_doc_ref.set({
             "email": data.email,
             "playlistUrl": data.playlistUrl,
-            "name": data.name  # Save the user's name
+            "name": data.name,  # Save the user's name
+            "credits": data.credits  # Save the initial credits
         })
         user_id = new_doc_ref.id
     else:
@@ -122,6 +128,15 @@ def process_all():
                     subject = f"New Video Summary: {vid['title']}"
                     send_summary_email(email, subject, summary)
 
+                    if user_data["credits"] > 0:
+                        # proceed with summarization
+                        new_credits = user_data["credits"] - 1
+                        user_doc.reference.update({"credits": new_credits})
+                    else:
+                        # skip summarization and handle 'no credits' scenario
+                        return {"redirect": "https://brainrepo.es/plan"}
+
+
                     total_new_videos += 1
 
     return {
@@ -129,6 +144,49 @@ def process_all():
         "processedUsers": processed_users,
         "totalNewVideos": total_new_videos,
     }
+
+# Set your Stripe secret key
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+class CheckoutRequest(BaseModel):
+    email: str
+    planId: str  # e.g., "pro" or "legend"
+
+@app.post("/create-checkout-session")
+def create_checkout_session(data: CheckoutRequest):
+    """
+    1. Receives { email, planId } from the frontend.
+    2. Creates a Stripe Checkout Session for the user to pay.
+    3. Returns the session URL for redirection.
+    """
+
+    # Your plan logic: map planId to the correct line item price or product
+    # You said you have 2 product links. Actually, we typically use 'price' IDs from the Stripe Dashboard:
+    # e.g., price_12345 for PRO, price_67890 for LEGEND
+    # But if you only have 'Buy' links, you can also do it that way. 
+    # Let's assume you have price IDs:
+    price_map = {
+        "pro": "prod_Rjhg6kfBzo1Nnk",   # Replace with your actual price ID from Stripe
+        "legend": "prod_RjhhDJDhTzEnHj"
+    }
+
+    if data.planId not in price_map:
+        raise HTTPException(status_code=400, detail="Invalid planId")
+
+    # Create the session
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{"price": price_map[data.planId], "quantity": 1}],
+            mode="subscription",  # or "payment" if you only want a one-time charge
+            success_url="https://your-frontend-domain.com/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="https://your-frontend-domain.com/plan",
+            customer_email=data.email,
+        )
+        return {"url": session.url}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
