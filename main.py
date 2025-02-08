@@ -81,10 +81,6 @@ def run_cron():
     return result
 
 def process_all():
-    """
-    Check every user with a playlistUrl for new videos, fetch transcripts,
-    generate summaries, and send emails for new items.
-    """
     users_ref = db.collection("users")
     all_users = users_ref.stream()
 
@@ -95,20 +91,32 @@ def process_all():
         user_data = user_doc.to_dict()
         playlist_url = user_data.get("playlistUrl")
         email = user_data.get("email")
+        credits = user_data.get("credits", 0)
 
         if playlist_url and email:
             processed_users += 1
             playlist_id = extract_playlist_id(playlist_url)
             if not playlist_id:
+                print(f"No valid playlist_id for {email}, skipping.")
                 continue
 
             videos = get_videos_from_playlist(playlist_id)
+            if not videos:
+                print(f"No videos found or error fetching playlist {playlist_id} for {email}.")
+                continue
+
+            print(f"Processing {len(videos)} videos for user {email} with {credits} credits.")
             for vid in videos:
                 video_id = vid["video_id"]
                 doc_ref = db.collection("videos").document(video_id)
 
+                # Only process if this video hasn't been seen before
                 if not doc_ref.get().exists:
-                    # new video
+                    if credits <= 0:
+                        print(f"User {email} has 0 credits, skipping new videos.")
+                        # Instead of returning, just break or continue to next user
+                        break
+
                     transcript = fetch_transcript(video_id)
                     if not transcript:
                         print(f"No transcript for video {video_id}, skipping.")
@@ -128,22 +136,21 @@ def process_all():
                     subject = f"New Video Summary: {vid['title']}"
                     send_summary_email(email, subject, summary)
 
-                    if user_data["credits"] > 0:
-                        # proceed with summarization
-                        new_credits = user_data["credits"] - 1
-                        user_doc.reference.update({"credits": new_credits})
-                    else:
-                        # skip summarization and handle 'no credits' scenario
-                        return {"redirect": "https://brainrepo.es/plan"}
-
+                    # Decrement credits
+                    credits = credits - 1
+                    user_doc.reference.update({"credits": credits})
+                    print(f"User {email} now has {credits} credits left.")
 
                     total_new_videos += 1
 
-    return {
+    result = {
         "message": "Cron job completed",
         "processedUsers": processed_users,
         "totalNewVideos": total_new_videos,
     }
+    print(result)
+    return result
+
 
 # Set your Stripe secret key
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
