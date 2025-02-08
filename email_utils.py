@@ -1,3 +1,5 @@
+#email_utils.py
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from email.mime.text import MIMEText
@@ -27,6 +29,7 @@ def send_summary_email(to_email, subject, summary):
     message = MIMEText(summary, "html")
     message["to"] = to_email
     message["subject"] = subject
+    message["from"] = "news@brainrepo.es"
 
     raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
     body = {"raw": raw_message}
