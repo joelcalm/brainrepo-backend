@@ -151,6 +151,31 @@ def process_all():
     print(result)
     return result
 
+@app.post("/store-playlist-videos")
+def store_playlist_videos(playlist_url: str = Body(...)):
+    pid = extract_playlist_id(playlist_url)
+    if not pid:
+        raise HTTPException(status_code=400, detail="Invalid playlist URL")
+    vids = get_videos_from_playlist(pid)
+    if not vids:
+        raise HTTPException(status_code=404, detail="No videos found")
+    for video in vids:
+        db.collection("videos").document(video["video_id"]).set({
+            "title": video["title"],
+            "description": video["description"],
+            "playlist_id": pid
+        })
+    return {"message": "Videos stored successfully"}
+
+@app.get("/debug-transcript")
+def debug_transcript(video_id: str):
+    from youtube_transcript_api import YouTubeTranscriptApi
+    try:
+        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+        return {"transcripts": str(transcripts)}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 # Set your Stripe secret key
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
