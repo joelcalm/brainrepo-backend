@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, HTTPException
 from firebase_config import db
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")  # from your Stripe dashboard
+endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")  # from your Stripe Dashboard
 
 stripe_webhook_router = APIRouter()
 
@@ -28,8 +28,24 @@ async def stripe_webhook(request: Request):
     # Handle the event
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
+        
+        # 1) Grab the session ID
+        session_id = session["id"]  # e.g. "cs_test_a1d5xk073JD..."
+
+        # 2) Check if we've already processed this session_id
+        session_doc_ref = db.collection("stripe_sessions").document(session_id)
+        if session_doc_ref.get().exists:
+            # Already processed => skip
+            print(f"Session {session_id} already processed, skipping.")
+            return {"status": "success - duplicate"}
+
+        # Not processed before => proceed
+
+        # 3) Mark this session as processed (create doc right away)
+        session_doc_ref.set({"processed": True})
+
+        # 4) Extract email & plan_id
         customer_email = session.get("customer_email")
-        # If you stored metadata in your checkout session, you can retrieve it:
         plan_id = session.get("metadata", {}).get("plan_id")
 
         if customer_email:
@@ -41,16 +57,19 @@ async def stripe_webhook(request: Request):
                 user_doc = users_query[0]
                 user_data = user_doc.to_dict()
 
-                # Example: "pro" plan -> add 30 credits, "legend" -> add a big number
-                # Or interpret from line items, etc.
+                # 5) Add credits based on the plan
                 credits_to_add = 0
                 if plan_id == "pro":
                     credits_to_add = 30
                 elif plan_id == "legend":
-                    credits_to_add = 999  # or any logic you want
+                    credits_to_add = 999
 
                 new_credits = user_data.get("credits", 0) + credits_to_add
                 user_doc.reference.update({"credits": new_credits})
+                print(f"Added {credits_to_add} credits to {customer_email}. Now has {new_credits} total.")
+
+                # 6) Update the user's plan
+                user_doc.reference.update({"plan": plan_id})
 
     # Return a 200 to acknowledge receipt of the event
     return {"status": "success"}

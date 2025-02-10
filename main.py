@@ -1,7 +1,7 @@
 # main.py
 import os
 import uvicorn
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Query
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import stripe
@@ -25,11 +25,13 @@ app.add_middleware(
 
 app.include_router(stripe_webhook_router)
 
+
 class PlaylistData(BaseModel):
     email: str
     playlistUrl: str
     name: str
     credits: int = 5  # Default credits for new users
+    plan: str = "free"  # Default plan for new users
 
 @app.get("/")
 def root():
@@ -55,8 +57,9 @@ def save_playlist(data: PlaylistData = Body(...)):
         new_doc_ref.set({
             "email": data.email,
             "playlistUrl": data.playlistUrl,
-            "name": data.name,  # Save the user's name
-            "credits": data.credits  # Save the initial credits
+            "name": data.name,
+            "credits": data.credits,
+            "plan": data.plan
         })
         user_id = new_doc_ref.id
     else:
@@ -65,16 +68,33 @@ def save_playlist(data: PlaylistData = Body(...)):
         user_id = user_doc.id
         user_doc.reference.update({
             "playlistUrl": data.playlistUrl,
-            "name": data.name  # Update the user's name
+            "name": data.name
         })
 
     return {"message": f"Playlist saved for user {data.email}", "userId": user_id}
 
 
+
+@app.get("/user-info")
+def get_user_info(email: str = Query(..., description="User's email address")):
+    """
+    Fetches the user's current plan and remaining credits based on their email.
+    """
+    users_query = db.collection("users").where("email", "==", email).limit(1).get()
+    if not users_query:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_data = users_query[0].to_dict()
+    return {
+        "email": user_data.get("email"),
+        "plan": user_data.get("plan", "free"),
+        "credits": user_data.get("credits", 0)
+    }
+
+
 @app.get("/run-cron")
 def run_cron():
     """
-    This endpoint will be hit by a scheduled job (every 30 min, for example).
+    This endpoint will be hit by a scheduled job (e.g., every 30 min).
     It processes all users in Firestore to see if they have new videos.
     """
     result = process_all()
@@ -92,6 +112,7 @@ def process_all():
         playlist_url = user_data.get("playlistUrl")
         email = user_data.get("email")
         credits = user_data.get("credits", 0)
+        user_id = user_doc.id  # We'll use this in doc keys
 
         if playlist_url and email:
             processed_users += 1
@@ -106,15 +127,18 @@ def process_all():
                 continue
 
             print(f"Processing {len(videos)} videos for user {email} with {credits} credits.")
+
             for vid in videos:
                 video_id = vid["video_id"]
-                doc_ref = db.collection("videos").document(video_id)
+                # Use a composite doc ID: <user_id>_<video_id>
+                composite_doc_id = f"{user_id}_{video_id}"
+                doc_ref = db.collection("videos").document(composite_doc_id)
 
-                # Only process if this video hasn't been seen before
                 if not doc_ref.get().exists:
                     if credits <= 0:
+                        #TODO: handle this case (send email to user to upgrade plan)
                         print(f"User {email} has 0 credits, skipping new videos.")
-                        # Instead of returning, just break or continue to next user
+                        # Just break out of the loop for this user
                         break
 
                     transcript = fetch_transcript(video_id)
@@ -129,15 +153,15 @@ def process_all():
                         "description": vid["description"],
                         "transcript": transcript,
                         "summary": summary,
-                        "user_id": user_doc.id,
+                        "user_id": user_id,
                     })
 
-                    # send email
+                    # Send the email
                     subject = f"New Video Summary: {vid['title']}"
                     send_summary_email(email, subject, summary)
 
-                    # Decrement credits
-                    credits = credits - 1
+                    # Decrement credits and update Firestore
+                    credits -= 1
                     user_doc.reference.update({"credits": credits})
                     print(f"User {email} now has {credits} credits left.")
 
@@ -150,32 +174,6 @@ def process_all():
     }
     print(result)
     return result
-
-@app.post("/store-playlist-videos")
-def store_playlist_videos(playlist_url: str = Body(...)):
-    pid = extract_playlist_id(playlist_url)
-    if not pid:
-        raise HTTPException(status_code=400, detail="Invalid playlist URL")
-    vids = get_videos_from_playlist(pid)
-    if not vids:
-        raise HTTPException(status_code=404, detail="No videos found")
-    for video in vids:
-        db.collection("videos").document(video["video_id"]).set({
-            "title": video["title"],
-            "description": video["description"],
-            "playlist_id": pid
-        })
-    return {"message": "Videos stored successfully"}
-
-@app.get("/debug-transcript")
-def debug_transcript(video_id: str):
-    from youtube_transcript_api import YouTubeTranscriptApi
-    try:
-        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-        return {"transcripts": str(transcripts)}
-    except Exception as e:
-        return {"error": str(e)}
-
 
 # Set your Stripe secret key
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -198,8 +196,8 @@ def create_checkout_session(data: CheckoutRequest):
     # But if you only have 'Buy' links, you can also do it that way. 
     # Let's assume you have price IDs:
     price_map = {
-        "pro": "prod_Rjhg6kfBzo1Nnk",   # Replace with your actual price ID from Stripe
-        "legend": "prod_RjhhDJDhTzEnHj"
+        "pro": "price_1QqEHIGzs5DdWJoJeAhyu3wx",   # Replace with your actual price ID from Stripe
+        "legend": "price_1QqEHlGzs5DdWJoJC91eE2K0"
     }
 
     if data.planId not in price_map:
@@ -211,9 +209,10 @@ def create_checkout_session(data: CheckoutRequest):
             payment_method_types=["card"],
             line_items=[{"price": price_map[data.planId], "quantity": 1}],
             mode="subscription",  # or "payment" if you only want a one-time charge
-            success_url="https://your-frontend-domain.com/success?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://your-frontend-domain.com/plan",
+            success_url="http://localhost:8080/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="http://localhost:8080/plan", 
             customer_email=data.email,
+            metadata={"plan_id": data.planId}  # Store the plan ID in the session
         )
         return {"url": session.url}
     except Exception as e:
