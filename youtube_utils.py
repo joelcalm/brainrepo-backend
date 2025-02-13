@@ -44,6 +44,18 @@ def get_videos_from_playlist(playlist_id: str):
 
     return videos
 
+import requests
+
+def fetch_transcript_cloud(video_id):
+    url = f"https://transcripts-api-479591062948.europe-southwest1.run.app/transcript/{video_id}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()["transcript"]
+    else:
+        return None
+
+
+
 def fetch_transcript(video_id: str):
     try:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'es'])
@@ -51,3 +63,6 @@ def fetch_transcript(video_id: str):
     except Exception as e:
         print(f"Error fetching transcript for {video_id}: {e}")
         return None
+
+
+

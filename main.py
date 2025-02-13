@@ -8,7 +8,7 @@ import stripe
 
 # Local imports
 from firebase_config import db
-from youtube_utils import extract_playlist_id, get_videos_from_playlist, fetch_transcript
+from youtube_utils import *
 from deepseek_utils import summarize_text
 from email_utils import send_summary_email
 from stripe_webhook import stripe_webhook_router
@@ -141,7 +141,7 @@ def process_all():
                         # Just break out of the loop for this user
                         break
 
-                    transcript = fetch_transcript(video_id)
+                    transcript = fetch_transcript_cloud(video_id)
                     if not transcript:
                         print(f"No transcript for video {video_id}, skipping.")
                         continue
