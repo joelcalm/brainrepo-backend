@@ -196,8 +196,8 @@ def create_checkout_session(data: CheckoutRequest):
     # But if you only have 'Buy' links, you can also do it that way. 
     # Let's assume you have price IDs:
     price_map = {
-        "pro": "price_1QqEHIGzs5DdWJoJeAhyu3wx",   # Replace with your actual price ID from Stripe
-        "legend": "price_1QqEHlGzs5DdWJoJC91eE2K0"
+        "pro": "price_1QsAHHGzs5DdWJoJ44RDKbAb",   # Replace with your actual price ID from Stripe
+        "legend": "price_1QsAHbGzs5DdWJoJMDFPo0Tg"
     }
 
     if data.planId not in price_map:
