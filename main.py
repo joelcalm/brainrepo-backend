@@ -209,8 +209,8 @@ def create_checkout_session(data: CheckoutRequest):
             payment_method_types=["card"],
             line_items=[{"price": price_map[data.planId], "quantity": 1}],
             mode="subscription",  # or "payment" if you only want a one-time charge
-            success_url="https://api.brainrepo.es/success?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://api.brainrepo.es/plan", 
+            success_url="https://brainrepo.es/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="https://brainrepo.es/plan", 
             customer_email=data.email,
             metadata={"plan_id": data.planId}  # Store the plan ID in the session
         )

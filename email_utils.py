@@ -1,15 +1,23 @@
 # email_utils.py
-
 import os
+import json
 import base64
 from email.mime.text import MIMEText
 
-from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv() 
 
 
 def style_html(content: str) -> str:
-    return f""" 
+    """
+    Wraps plain HTML content in a styled HTML template.
+    """
+    return f"""
 <html>
 <head>
   <meta charset="UTF-8" />
@@ -33,7 +41,7 @@ def style_html(content: str) -> str:
     p, li {{
       color: #555555;
       line-height: 1.5;
-      font-size: 16px;  /* Increased font size for paragraphs and list items */
+      font-size: 16px;
     }}
   </style>
 </head>
@@ -45,8 +53,11 @@ def style_html(content: str) -> str:
 </html>
 """
 
-
 def clean_summary(summary_html: str) -> str:
+    """
+    Strips any markdown/code fence from the summary content.
+    Adjust if your summary includes additional formatting tokens.
+    """
     return (
         summary_html
         .strip()
@@ -55,48 +66,52 @@ def clean_summary(summary_html: str) -> str:
         .strip()
     )
 
-
 def send_summary_email(to_email: str, subject: str, summary: str):
     """
-    Sends an HTML-formatted email using the Gmail API.
-    'summary' is expected to be valid HTML returned by the API.
+    Sends an HTML-formatted email using the Gmail API via a
+    service account with domain-wide delegation, impersonating
+    news@brainrepo.es.
     """
-    client_id = os.getenv("GMAIL_CLIENT_ID")
-    client_secret = os.getenv("GMAIL_CLIENT_SECRET")
-    refresh_token = os.getenv("GMAIL_REFRESH_TOKEN")
-    token_uri = "https://oauth2.googleapis.com/token"
 
-    # Create credentials using the refresh token.
-    creds = Credentials(
-        token=None,
-        refresh_token=refresh_token,
-        token_uri=token_uri,
-        client_id=client_id,
-        client_secret=client_secret,
-        scopes=["https://www.googleapis.com/auth/gmail.send"],
+    # 1. Load the entire JSON from an environment variable
+    service_account_json_str = os.getenv("SERVICE_ACCOUNT_JSON")
+    if not service_account_json_str:
+        raise ValueError("SERVICE_ACCOUNT_JSON env variable is not set or empty.")
+
+    service_account_info = json.loads(service_account_json_str)
+
+    # 2. Create service account credentials, restricted to the 'gmail.send' scope
+    creds = service_account.Credentials.from_service_account_info(
+        service_account_info,
+        scopes=["https://www.googleapis.com/auth/gmail.send"]
     )
 
-    # Build the Gmail service
-    service = build("gmail", "v1", credentials=creds)
+    # 3. Delegate to news@brainrepo.es
+    delegated_creds = creds.with_subject("news@brainrepo.es")
 
+    # 4. Build the Gmail service
+    service = build("gmail", "v1", credentials=delegated_creds)
+
+    # 5. Clean & style the summary HTML
     clean = clean_summary(summary)
-
-    # Wrap the API's raw HTML summary in some basic styling.
     styled_summary = style_html(clean)
 
-    # Create the MIME email message (HTML)
+    # 6. Prepare the MIME message
     message = MIMEText(styled_summary, "html")
     message["to"] = to_email
     message["subject"] = subject
-    message["from"] = "news@brainrepo.es"
+    message["from"] = "BrainRepo <news@brainrepo.es>"
 
-    # Encode as base64 for Gmail
+    # 7. Base64url-encode the message for Gmail API
     raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
     body = {"raw": raw_message}
 
-    # Send the email
+    # 8. Send the email
     try:
-        sent_message = service.users().messages().send(userId="me", body=body).execute()
+        sent_message = service.users().messages().send(
+            userId="news@brainrepo.es",  # or "me", same effect
+            body=body
+        ).execute()
         print("Email sent! Message ID:", sent_message.get("id"))
     except Exception as e:
         print("Failed to send email:", e)
