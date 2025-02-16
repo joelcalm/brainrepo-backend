@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 
 load_dotenv() 
 
+SERVICE_ACOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON")
+
 
 def style_html(content: str) -> str:
     """
@@ -74,7 +76,7 @@ def send_summary_email(to_email: str, subject: str, summary: str):
     """
 
     # 1. Load the entire JSON from an environment variable
-    service_account_json_str = os.getenv("SERVICE_ACCOUNT_JSON")
+    service_account_json_str = SERVICE_ACOUNT_JSON
     if not service_account_json_str:
         raise ValueError("SERVICE_ACCOUNT_JSON env variable is not set or empty.")
 
