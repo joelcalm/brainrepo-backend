@@ -33,6 +33,15 @@ class PlaylistData(BaseModel):
     credits: int = 5  # Default credits for new users
     plan: str = "free"  # Default plan for new users
 
+
+@app.get("/transcript/{video_id}")
+async def get_transcript(video_id: str):
+    transcript = fetch_transcript(video_id)
+    if transcript:
+        return {"video_id": video_id, "transcript": transcript}
+    else:
+        raise HTTPException(status_code=404, detail="Transcript not found 2")
+
 @app.get("/")
 def root():
     return {"message": "Hello from FastAPI backend!"}

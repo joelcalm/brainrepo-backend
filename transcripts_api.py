@@ -11,7 +11,7 @@ async def get_transcript(video_id: str):
     if transcript:
         return {"video_id": video_id, "transcript": transcript}
     else:
-        raise HTTPException(status_code=404, detail="Transcript not found")
+        raise HTTPException(status_code=404, detail="Transcript not found 2")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
