@@ -34,6 +34,10 @@ class PlaylistData(BaseModel):
     plan: str = "free"  # Default plan for new users
 
 
+@app.get("/")
+def root():
+    return {"message": "Hello from FastAPI backend!"}
+
 @app.get("/transcript/{video_id}")
 async def get_transcript(video_id: str):
     transcript = fetch_transcript(video_id)
@@ -41,10 +45,6 @@ async def get_transcript(video_id: str):
         return {"video_id": video_id, "transcript": transcript}
     else:
         raise HTTPException(status_code=404, detail="Transcript not found 2")
-
-@app.get("/")
-def root():
-    return {"message": "Hello from FastAPI backend!"}
 
 @app.post("/save-playlist")
 def save_playlist(data: PlaylistData = Body(...)):
