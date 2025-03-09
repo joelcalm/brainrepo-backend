@@ -11,7 +11,7 @@ from firebase_config import db
 from youtube_utils import *
 from deepseek_utils import summarize_text
 from email_utils import send_summary_email, send_low_credit_email
-from backend.stripe_utils import stripe_webhook_router, portal_router
+from stripe_utils import stripe_webhook_router, portal_router
 
 app = FastAPI()
 
