@@ -1,8 +1,10 @@
-# stripe_webhook.py
+# stripe_utils.py
 import os
 import stripe
 from fastapi import APIRouter, Request, HTTPException
 from firebase_config import db
+from pydantic import BaseModel
+
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")  # from your Stripe Dashboard
@@ -30,8 +32,8 @@ async def stripe_webhook(request: Request):
         session = event["data"]["object"]
         
         # 1) Grab the session ID
-        session_id = session["id"]  # e.g. "cs_test_a1d5xk073JD..."
-
+        session_id = session["id"] 
+        
         # 2) Check if we've already processed this session_id
         session_doc_ref = db.collection("stripe_sessions").document(session_id)
         if session_doc_ref.get().exists:
@@ -44,7 +46,7 @@ async def stripe_webhook(request: Request):
         # 3) Mark this session as processed (create doc right away)
         session_doc_ref.set({"processed": True})
 
-        # 4) Extract email & plan_id
+        # 4) Extract the customer's email & plan_id
         customer_email = session.get("customer_email")
         plan_id = session.get("metadata", {}).get("plan_id")
 
@@ -53,6 +55,7 @@ async def stripe_webhook(request: Request):
                              .where("email", "==", customer_email) \
                              .limit(1) \
                              .get()
+
             if len(users_query) > 0:
                 user_doc = users_query[0]
                 user_data = user_doc.to_dict()
@@ -65,11 +68,55 @@ async def stripe_webhook(request: Request):
                     credits_to_add = 999
 
                 new_credits = user_data.get("credits", 0) + credits_to_add
-                user_doc.reference.update({"credits": new_credits})
+
+                # 6) Update the user's plan and credits
+                user_doc.reference.update({
+                    "plan": plan_id,
+                    "credits": new_credits,
+                })
+
                 print(f"Added {credits_to_add} credits to {customer_email}. Now has {new_credits} total.")
 
-                # 6) Update the user's plan
-                user_doc.reference.update({"plan": plan_id})
+                # 7) Store the Stripe customer ID in the user doc
+                #    This is crucial for letting them manage the subscription.
+                stripe_customer_id = session.get("customer")  # e.g. "cus_ABC123..."
+                if stripe_customer_id:
+                    user_doc.reference.update({
+                        "stripeCustomerId": stripe_customer_id
+                    })
+                    print(f"Stored stripeCustomerId={stripe_customer_id} for user {customer_email}.")
 
     # Return a 200 to acknowledge receipt of the event
     return {"status": "success"}
+
+
+portal_router = APIRouter()
+
+class PortalRequest(BaseModel):
+    email: str
+
+@portal_router.post("/create-portal-session")
+def create_portal_session(data: PortalRequest):
+    # 1) Look up the user doc by email
+    users_query = (
+        db.collection("users")
+        .where("email", "==", data.email)
+        .limit(1)
+        .get()
+    )
+    if len(users_query) == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_doc = users_query[0].to_dict()
+    stripe_customer_id = user_doc.get("stripeCustomerId")
+
+    if not stripe_customer_id:
+        # User might never have purchased a plan => no subscription to manage
+        raise HTTPException(status_code=400, detail="No stripeCustomerId found. User not subscribed?")
+
+    # 2) Create a portal session for that customer
+    session = stripe.billing_portal.sessions.create(
+        customer=stripe_customer_id,
+        return_url="https://brainrepo.es/plan"  # the page user sees after they close the portal
+    )
+    return {"url": session.url}

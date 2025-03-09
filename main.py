@@ -10,8 +10,8 @@ import stripe
 from firebase_config import db
 from youtube_utils import *
 from deepseek_utils import summarize_text
-from email_utils import send_summary_email
-from stripe_webhook import stripe_webhook_router
+from email_utils import send_summary_email, send_low_credit_email
+from backend.stripe_utils import stripe_webhook_router, portal_router
 
 app = FastAPI()
 
@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(stripe_webhook_router)
+app.include_router(portal_router)
 
 
 class PlaylistData(BaseModel):
@@ -145,9 +146,13 @@ def process_all():
 
                 if not doc_ref.get().exists:
                     if credits <= 0:
-                        #TODO: handle this case (send email to user to upgrade plan)
-                        print(f"User {email} has 0 credits, skipping new videos.")
-                        # Just break out of the loop for this user
+                        # Send an email to the user informing them to upgrade their plan.
+                        print(f"User {email} has 0 credits, sending upgrade email.")
+                        try:
+                            send_low_credit_email(email)
+                        except Exception as e:
+                            print(f"Error sending low credits email to {email}: {e}")
+                        # Skip processing new videos for this user
                         break
 
                     transcript = fetch_transcript_cloud(video_id)
@@ -226,6 +231,7 @@ def create_checkout_session(data: CheckoutRequest):
         return {"url": session.url}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 
 if __name__ == "__main__":

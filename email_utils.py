@@ -14,7 +14,6 @@ load_dotenv()
 
 SERVICE_ACOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON")
 
-
 def style_html(content: str) -> str:
     """
     Wraps plain HTML content in a styled HTML template.
@@ -44,6 +43,14 @@ def style_html(content: str) -> str:
       color: #555555;
       line-height: 1.5;
       font-size: 16px;
+    }}
+    .button {{
+      display: inline-block;
+      padding: 10px 20px;
+      background-color: #007BFF;
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 4px;
     }}
   </style>
 </head>
@@ -117,3 +124,21 @@ def send_summary_email(to_email: str, subject: str, summary: str):
         print("Email sent! Message ID:", sent_message.get("id"))
     except Exception as e:
         print("Failed to send email:", e)
+
+def send_low_credit_email(to_email: str):
+    """
+    Sends an email notification to the user indicating that they have
+    run out of credits and prompting them to upgrade their plan.
+    """
+    subject = "Your BrainRepo Credits Have Run Out!"
+    # Create a simple HTML message with a call-to-action button.
+    email_content = f"""
+    <h2>Your Credits Are Depleted</h2>
+    <p>Hello,</p>
+    <p>It looks like you've run out of BrainRepo credits. To continue enjoying our video summaries, please upgrade your plan.</p>
+    <p>
+      <a class="button" href="https://brainrepo.es/plan">Upgrade Now</a>
+    </p>
+    <p>Thank you for using BrainRepo!</p>
+    """
+    send_summary_email(to_email, subject, email_content)
