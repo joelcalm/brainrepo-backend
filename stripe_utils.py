@@ -112,7 +112,7 @@ def create_portal_session(data: PortalRequest):
 
     if not stripe_customer_id:
         # User might never have purchased a plan => no subscription to manage
-        raise HTTPException(status_code=400, detail="No stripeCustomerId found. User not subscribed?")
+        raise HTTPException(status_code=400, detail="You are not subscribed to any plan.")
 
     # 2) Create a portal session for that customer
     session = stripe.billing_portal.sessions.create(

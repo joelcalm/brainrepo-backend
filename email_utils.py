@@ -19,10 +19,10 @@ def style_html(content: str) -> str:
     Wraps plain HTML content in a styled HTML template.
     """
     return f"""
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <style>
+  <html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
     body {{
       font-family: Arial, sans-serif;
       margin: 0;
@@ -47,20 +47,21 @@ def style_html(content: str) -> str:
     .button {{
       display: inline-block;
       padding: 10px 20px;
-      background-color: #007BFF;
-      color: #ffffff;
+      background-color: #9b87f5;
+      color: #000000;
       text-decoration: none;
       border-radius: 4px;
+      z-index: 1;
     }}
-  </style>
-</head>
-<body>
-  <div class="email-container">
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
     {content}
-  </div>
-</body>
-</html>
-"""
+    </div>
+  </body>
+  </html>
+  """
 
 def clean_summary(summary_html: str) -> str:
     """
