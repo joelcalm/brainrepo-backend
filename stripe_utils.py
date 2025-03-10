@@ -122,7 +122,7 @@ def create_portal_session(data: PortalRequest):
         raise HTTPException(status_code=400, detail="You are not subscribed to any plan.")
 
     # 2) Create a portal session for that customer
-    session = stripe.billing_portal.sessions.create(
+    session = stripe.billing_portal.Session.create(
         customer=stripe_customer_id,
         return_url="https://brainrepo.es/plan"  # the page user sees after they close the portal
     )
