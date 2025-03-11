@@ -45,7 +45,7 @@ async def stripe_webhook(request: Request):
         plan_id = None
 
         # Match your known Payment Link IDs
-        if payment_link_id == "plink_1R1DqDGzs5DdWJoJcZDCyn7Y":
+        if payment_link_id == "plink_1R1aluGzs5DdWJoJB2PGCuNJ":
             plan_id = "pro"
         elif payment_link_id == "plink_1R1DpEGzs5DdWJoJeQQNJcSz":
             plan_id = "legend"
